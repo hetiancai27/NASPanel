@@ -1,23 +1,33 @@
 #include <Arduino.h>
-
 void setup() {
-  pinMode(43, OUTPUT);
-  pinMode(44, OUTPUT);
+  // 启动 USB CDC 串口
+  Serial.begin(115200);
 
-  digitalWrite(43, LOW);
-  digitalWrite(44, LOW);
+  // 等待 USB 主机连接（可选，但推荐）
+  while (!Serial) {
+    delay(10);
+  }
+
+  Serial.println("USB Serial Ready");
 }
 
 void loop() {
-  static unsigned long lastToggleMs = 0;
-  static bool level = false;
+  // 如果有数据
+  if (Serial.available()) {
+    // 读取一行（以换行符结尾）
+    String msg = Serial.readStringUntil('\n');
 
-  const unsigned long now = millis();
-  if (now - lastToggleMs >= 500) {
-    lastToggleMs = now;
-    level = !level;
+    // 去掉多余空白
+    msg.trim();
 
-    digitalWrite(43, level ? HIGH : LOW);
-    digitalWrite(44, level ? HIGH : LOW);
+    // 打印收到的内容
+    Serial.print("RX: ");
+    Serial.println(msg);
+
+    // 回显
+    Serial.print("ECHO: ");
+    Serial.println(msg);
   }
+
+  delay(10); // 防止空转
 }
