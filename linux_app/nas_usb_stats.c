@@ -105,6 +105,33 @@ static long read_cpu_freq_mhz(void) {
     return -1;
 }
 
+/* 从 /proc/net/dev 汇总所有接口的收发字节数 */
+static int read_net_bytes(unsigned long long *rx_total, unsigned long long *tx_total) {
+    FILE *f = fopen("/proc/net/dev", "r");
+    if (!f) return -1;
+    char line[512];
+    *rx_total = 0;
+    *tx_total = 0;
+    /* 跳过前两行表头 */
+    if (!fgets(line, sizeof(line), f) || !fgets(line, sizeof(line), f)) {
+        fclose(f);
+        return -1;
+    }
+    while (fgets(line, sizeof(line), f)) {
+        unsigned long long rx = 0, tx = 0;
+        char *p = strchr(line, ':');
+        if (!p) continue;
+        *p = '\0';
+        if (sscanf(p + 1, "%llu %*u %*u %*u %*u %*u %*u %*u %llu",
+                   &rx, &tx) >= 2) {
+            *rx_total += rx;
+            *tx_total += tx;
+        }
+    }
+    fclose(f);
+    return 0;
+}
+
 static void get_ip(char *buf, size_t bufsz) {
     // 简化实现：调用 ip route get
     // 输出格式里有 "src x.x.x.x"
@@ -144,6 +171,9 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    unsigned long long prev_net_rx = 0, prev_net_tx = 0;
+    int net_ok = read_net_bytes(&prev_net_rx, &prev_net_tx);
+
     while (1) {
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
@@ -169,6 +199,19 @@ int main(int argc, char **argv) {
 
         char ip[64]; get_ip(ip, sizeof(ip));
 
+        double net_rx_kbs = 0.0, net_tx_kbs = 0.0;
+        if (net_ok == 0) {
+            unsigned long long cur_rx = 0, cur_tx = 0;
+            if (read_net_bytes(&cur_rx, &cur_tx) == 0 && interval > 0) {
+                net_rx_kbs = (double)(cur_rx - prev_net_rx) / (1024.0 * (double)interval);
+                net_tx_kbs = (double)(cur_tx - prev_net_tx) / (1024.0 * (double)interval);
+                if (net_rx_kbs < 0) net_rx_kbs = 0;
+                if (net_tx_kbs < 0) net_tx_kbs = 0;
+                prev_net_rx = cur_rx;
+                prev_net_tx = cur_tx;
+            }
+        }
+
         // ISO time (seconds)
         char tbuf[64];
         time_t now = time(NULL);
@@ -182,16 +225,18 @@ int main(int argc, char **argv) {
         if (freq_mhz < 0) snprintf(freq_str, sizeof(freq_str), "null");
         else snprintf(freq_str, sizeof(freq_str), "%ld", freq_mhz);
 
-        char line[512];
+        char line[640];
         int n = snprintf(line, sizeof(line),
             "{\"ts\":\"%s\",\"cpu_usage\":%.1f,\"cpu_temp_c\":%s,"
             "\"mem_used_mb\":%d,\"mem_total_mb\":%d,"
             "\"load1\":%.2f,\"load5\":%.2f,\"load15\":%.2f,"
-            "\"ip\":\"%s\",\"uptime_s\":%ld,\"cpu_freq_mhz\":%s}\n",
+            "\"ip\":\"%s\",\"uptime_s\":%ld,\"cpu_freq_mhz\":%s,"
+            "\"net_rx_kbs\":%.2f,\"net_tx_kbs\":%.2f}\n",
             tbuf, cpu_usage, temp_str,
             mem_used, mem_total,
             l1,l5,l15,
-            ip, uptime_s, freq_str
+            ip, uptime_s, freq_str,
+            net_rx_kbs, net_tx_kbs
         );
 
         if (n > 0) {

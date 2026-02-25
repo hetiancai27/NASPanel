@@ -1,15 +1,21 @@
 # nas_usb_stats 参数说明与获取原理
 
-`nas_usb_stats` 周期性向 stdout 输出一行 JSON，包含系统运行状态。本文档说明各字段含义、数据来源及计算方式。
+`nas_usb_stats` 周期性向 stdout 输出一行 JSON，包含系统运行状态（CPU、内存、负载、温度、网速等）。本文档说明各字段含义、数据来源及计算方式。
 
 ---
 
 ## 输出格式
 
-每行一条 JSON，例如：
+每行一条 JSON，字段顺序固定。示例：
 
 ```json
-{"ts":"2025-02-24T22:30:00","cpu_usage":12.5,"cpu_temp_c":45.2,"mem_used_mb":512,"mem_total_mb":2048,"load1":0.50,"load5":0.48,"load15":0.45,"ip":"192.168.1.100","uptime_s":86400,"cpu_freq_mhz":1200}
+{"ts":"2025-02-24T22:30:00","cpu_usage":12.5,"cpu_temp_c":45.2,"mem_used_mb":512,"mem_total_mb":2048,"load1":0.50,"load5":0.48,"load15":0.45,"ip":"192.168.1.100","uptime_s":86400,"cpu_freq_mhz":1200,"net_rx_kbs":12.34,"net_tx_kbs":5.67}
+```
+
+带网速的实际运行示例（首条网速可能接近 0，之后为上一间隔内的平均速率）：
+
+```json
+{"ts":"2026-02-24T22:56:47","cpu_usage":4.9,"cpu_temp_c":42.0,"mem_used_mb":1624,"mem_total_mb":7801,"load1":0.58,"load5":0.24,"load15":0.14,"ip":"192.168.31.123","uptime_s":1621538,"cpu_freq_mhz":795,"net_rx_kbs":41.71,"net_tx_kbs":25.36}
 ```
 
 ---
@@ -29,6 +35,8 @@
 | `ip`             | string | 出网 IP        | `ip -4 route get 1.1.1.1` 中 src |
 | `uptime_s`       | number | 运行时间 秒    | `/proc/uptime`                   |
 | `cpu_freq_mhz`   | number/null | 当前 CPU 频率 MHz | `/sys/.../cpufreq` 或 `/proc/cpuinfo` |
+| `net_rx_kbs`     | number | 下行网速 KB/s（所有接口汇总） | `/proc/net/dev` 差值 / 间隔 |
+| `net_tx_kbs`     | number | 上行网速 KB/s（所有接口汇总） | `/proc/net/dev` 差值 / 间隔 |
 
 ---
 
@@ -111,6 +119,18 @@
 
 ---
 
+### 9. `net_rx_kbs` / `net_tx_kbs`（网速 KB/s）
+
+- **来源**：`/proc/net/dev`，汇总所有网络接口的接收字节数（rx）与发送字节数（tx）。
+- **格式**：每行一个接口，`接口名: rx_bytes rx_packets ... tx_bytes ...`，程序解析前 8 个 rx 字段中的第 1 个（rx_bytes）及第 9 个（tx_bytes）。
+- **原理**：
+  - 每次采样读取当前所有接口的 rx_bytes、tx_bytes 之和。
+  - 与上一采样做差，再除以采样间隔（秒），得到字节/秒，除以 1024 得到 **KB/s**。
+  - 首条输出因无“上一采样”可能接近 0，从第二条起为上一间隔内的平均速率。
+- **说明**：为所有接口合计（eth0、wlan0、lo 等），若只需外网网速可自行按接口过滤；lo 流量通常较小。
+
+---
+
 ## 运行方式
 
 ```bash
@@ -119,6 +139,7 @@
 
 - `dev`：保留参数，当前未使用（可忽略）。
 - `interval`：采样间隔（秒），默认 1。程序每 `interval` 秒输出一行 JSON 到 stdout。
+- **说明**：首条输出的 `net_rx_kbs`、`net_tx_kbs` 因无上一采样对比，通常接近 0；从第二条起为上一间隔内的平均网速（KB/s）。
 
 ---
 
@@ -127,3 +148,4 @@
 - **仅读**：`/proc/*`、`/sys/*` 为只读接口，通常无需 root。
 - **命令**：获取 `ip` 时会执行 `ip -4 route get 1.1.1.1`，需系统已安装 iproute2 且可执行。
 - **温度/频率**：部分嵌入式或容器环境可能没有 thermal 或 cpufreq，对应字段为 `null` 属正常。
+- **网速**：依赖 `/proc/net/dev`，汇总所有接口（含 lo）；无网络或读失败时 `net_rx_kbs`、`net_tx_kbs` 为 0。
