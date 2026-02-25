@@ -1,3 +1,10 @@
+/*
+ * 01_serial_port_demo - USB 串口收发示例
+ *
+ * 与 linux_app/nas_serial_stats 匹配：115200 8N1，主机每行发一条消息（如 NAS 状态 JSON），
+ * 以 \\n 结尾；本机用 readStringUntil('\\n') 接收后回显 "RX:" / "ECHO:"。
+ * 可扩展为解析 JSON 后驱动屏幕或 LED。
+ */
 #include <Arduino.h>
 
 static constexpr uint8_t PIN_GPIO43 = 43;
@@ -6,7 +13,7 @@ static constexpr uint8_t PIN_GPIO44 = 44;
 static unsigned long lastToggleMs = 0;
 static bool level = false;
 void setup() {
-  // 启动 USB CDC 串口
+  // 启动 USB CDC 串口（与 nas_serial_stats 一致：115200）
   Serial.begin(115200);
 
   // 等待 USB 主机连接（可选，但推荐）
@@ -23,9 +30,8 @@ void setup() {
 }
 
 void loop() {
-  // 如果有数据
+  // 接收主机发来的一行（如 nas_serial_stats 的 JSON），以 \n 结尾
   if (Serial.available()) {
-    // 读取一行（以换行符结尾）
     String msg = Serial.readStringUntil('\n');
 
     // 去掉多余空白
