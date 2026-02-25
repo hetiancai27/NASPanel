@@ -8,9 +8,10 @@
  *   - 波特率 115200 8N1，每行一条消息以 \\n 结尾；
  *   - ESP32 使用 Serial.readStringUntil('\\n') 接收，回显 "RX: ..." 与 "ECHO: ..."。
  *
- * 用法：./nas_serial_stats [串口设备] [间隔秒数]
- *   默认：./nas_serial_stats  =>  /dev/ttyACM0，每 1 秒
+ * 用法：./nas_serial_stats [串口设备] [间隔秒数] [回显]
+ *   默认：./nas_serial_stats  =>  /dev/ttyACM0，每 1 秒，打印串口回显
  *   例：./nas_serial_stats /dev/ttyACM0 2
+ *   不打印串口回显（仅看发出的 JSON）：./nas_serial_stats /dev/ttyACM0 1 0
  *   仅 stdout（不打开串口）：./nas_serial_stats - 1  或  ./nas_serial_stats stdout 1
  *
  * 编译：gcc -O2 -o nas_serial_stats nas_serial_stats.c
@@ -191,6 +192,9 @@ int main(int argc, char **argv) {
         serial_dev = "/dev/ttyACM0";  /* 无参数时默认打开串口，与 01_serial_port_demo 配合 */
     int interval = (argc >= 3) ? atoi(argv[2]) : 1;
     if (interval <= 0) interval = 1;
+    int print_echo = 1;
+    if (argc >= 4 && (argv[3][0] == '0' || strcmp(argv[3], "q") == 0 || strcmp(argv[3], "quiet") == 0))
+        print_echo = 0;
 
     int serial_fd = -1;
     if (serial_dev) {
@@ -199,7 +203,10 @@ int main(int argc, char **argv) {
             perror("serial open failed");
             fprintf(stderr, "fallback: output to stdout only\n");
         } else {
-            printf("串口 %s 已打开 115200 8N1，每 %d 秒发送 JSON。按 Ctrl+C 退出。\n", serial_dev, interval);
+            if (print_echo)
+                printf("串口 %s 已打开 115200 8N1，每 %d 秒发送 JSON，回显摘要。按 Ctrl+C 退出。\n", serial_dev, interval);
+            else
+                printf("串口 %s 已打开 115200 8N1，每 %d 秒发送 JSON（回显已关闭）。按 Ctrl+C 退出。\n", serial_dev, interval);
             fflush(stdout);
         }
     }
@@ -239,16 +246,23 @@ int main(int argc, char **argv) {
                     linepos += add;
                     linebuf[linepos] = '\0';
                 }
-                /* 按行输出，避免 [收到] 插在行中间；跳过空行 */
+                /* 按行输出；开启回显时只打摘要（RX/ECHO 字节数），不刷整段 JSON */
                 char *p = linebuf;
                 while (p < linebuf + linepos) {
                     char *q = strchr(p, '\n');
                     if (!q) break;
                     q++;
-                    if ((int)(q - p) > 1) {
+                    if ((int)(q - p) <= 1) { /* 空行跳过 */ }
+                    else if (!print_echo) { /* 回显关闭：不输出 */ }
+                    else if (q - p >= 4 && strncmp(p, "RX: ", 4) == 0)
+                        printf("[收到] RX %d 字节\n", (int)(q - p - 4));
+                    else if (q - p >= 6 && strncmp(p, "ECHO: ", 6) == 0)
+                        printf("[收到] ECHO %d 字节\n", (int)(q - p - 6));
+                    else {
                         printf("[收到] %.*s", (int)(q - p), p);
                         fflush(stdout);
                     }
+                    if (print_echo) fflush(stdout);
                     {
                         int keep = linepos - (int)(q - linebuf);
                         if (keep > 0)
