@@ -46,5 +46,6 @@
 
 ## 相关代码
 
-- 主机发送与采集：`linux_app/nas_serial_stats.c`
+- 主机发送与采集：`linux_app/nas_stats_json_serial.c`（编译产物通常为 `linux_app/nas_serial_stats`）
+- 字段说明：`linux_app/nas_usb_stats-参数说明.md`
 - 单片机收发与回显：`firmware/01_serial_port_demo/src/main.cpp`
