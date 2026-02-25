@@ -216,6 +216,9 @@ int main(int argc, char **argv) {
     time_t last_send = time(NULL);
     char line[640];
     char rbuf[256];
+#define LINEBUF_SIZE 1024
+    char linebuf[LINEBUF_SIZE];
+    int linepos = 0;
 
     while (1) {
         struct timeval tv = { .tv_sec = 0, .tv_usec = 100000 };
@@ -229,8 +232,31 @@ int main(int argc, char **argv) {
             ssize_t n = read(serial_fd, rbuf, sizeof(rbuf) - 1);
             if (n > 0) {
                 rbuf[n] = '\0';
-                printf("[收到] %s", rbuf);
-                fflush(stdout);
+                int add = (int)n;
+                if (linepos + add >= LINEBUF_SIZE - 1) add = LINEBUF_SIZE - 1 - linepos;
+                if (add > 0) {
+                    memcpy(linebuf + linepos, rbuf, (size_t)add);
+                    linepos += add;
+                    linebuf[linepos] = '\0';
+                }
+                /* 按行输出，避免 [收到] 插在行中间；跳过空行 */
+                char *p = linebuf;
+                while (p < linebuf + linepos) {
+                    char *q = strchr(p, '\n');
+                    if (!q) break;
+                    q++;
+                    if ((int)(q - p) > 1) {
+                        printf("[收到] %.*s", (int)(q - p), p);
+                        fflush(stdout);
+                    }
+                    {
+                        int keep = linepos - (int)(q - linebuf);
+                        if (keep > 0)
+                            memmove(linebuf, q, (size_t)keep);
+                        linepos = keep;
+                    }
+                    p = linebuf;
+                }
             }
         }
 

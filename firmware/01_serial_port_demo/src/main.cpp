@@ -37,13 +37,16 @@ void loop() {
     // 去掉多余空白
     msg.trim();
 
-    // 打印收到的内容
+    // 打印收到的内容（长行用 write 避免 String 再分配）
     Serial.print("RX: ");
-    Serial.println(msg);
+    Serial.write(msg.c_str(), msg.length());
+    Serial.println();
+    Serial.flush();  // 发完再发 ECHO，避免 TX 缓冲溢出导致 ECHO 丢字
 
     // 回显
     Serial.print("ECHO: ");
-    Serial.println(msg);
+    Serial.write(msg.c_str(), msg.length());
+    Serial.println();
   }
 
   const unsigned long now = millis();
