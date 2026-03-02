@@ -1,7 +1,23 @@
 // NASPanel 固件示例：USB CDC 串口按行接收并回显（清爽注释版）
 #include <Arduino.h> //                                                        Arduino 核心 API（Serial / delay 等）
 #include <ArduinoJson.h> //                                                    JSON 解析（PlatformIO: lib_deps = bblanchon/ArduinoJson）
+#include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7789.h>
 #include <string.h>
+
+// ===== 屏幕（先按 02_screen_demo 的引脚/分辨率移植；如与你硬件不一致需改这里）=====
+#define TFT_CS 9
+#define TFT_DC 7
+#define TFT_RST 8
+#define TFT_MOSI 6
+#define TFT_SCLK 5
+#define TFT_BL 10
+
+#define SCREEN_WIDTH 240
+#define SCREEN_HEIGHT 296
+
+static Adafruit_ST7789 tft(TFT_CS, TFT_DC, TFT_RST);
 
 // 上位机每秒发送一行 JSON（NDJSON），这里保存解析后的字段（按需增减）
 struct NasStats {
@@ -97,8 +113,46 @@ static void respondEchoToSerial(const char *line, size_t len) {
   Serial.flush(); //                                                           等待 TX 刷出，减少后续输出被挤占的概率
 }
 
+static void displayInit() {
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH);
+
+  SPI.begin(TFT_SCLK, -1, TFT_MOSI, -1);
+  tft.init(SCREEN_WIDTH, SCREEN_HEIGHT);
+  tft.setRotation(2);
+  tft.invertDisplay(false);
+  tft.fillScreen(ST77XX_BLACK);
+
+  tft.setTextWrap(false);
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setTextSize(2);
+  tft.setCursor(0, 0);
+  tft.println("Display OK");
+}
+
+static void displaySelfTest() {
+  tft.fillScreen(ST77XX_RED);
+  delay(200);
+  tft.fillScreen(ST77XX_GREEN);
+  delay(200);
+  tft.fillScreen(ST77XX_BLUE);
+  delay(200);
+  tft.fillScreen(ST77XX_BLACK);
+}
+
+static void displayShowStats(const NasStats &s) {
+  tft.fillRect(0, 0, SCREEN_WIDTH, 96, ST77XX_BLACK);
+  tft.setCursor(0, 0);
+  tft.printf("IP:%s\n", s.ip);
+  tft.printf("CPU:%.1f%%\n", s.cpu_usage);
+  tft.printf("T:%.1fC\n", s.cpu_temp_c);
+  tft.printf("NET:%.1f/%.1f\n", s.net_rx_kbs, s.net_tx_kbs);
+}
+
 void setup() { //                                                              上电/复位后执行一次
   initUsbSerial(115200, true); //                                               初始化串口并等待主机连接
+  displayInit();
+  displaySelfTest();
 }
 
 void loop() { //                                                               主循环
@@ -115,6 +169,7 @@ void loop() { //                                                               �
                     s.ts, s.ip, s.cpu_usage, s.cpu_temp_c,
                     s.mem_used_mb, s.mem_total_mb,
                     s.net_rx_kbs, s.net_tx_kbs);
+      displayShowStats(s);
     } else {
       Serial.println("ERR: json");
     }
