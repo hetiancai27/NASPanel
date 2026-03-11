@@ -4,6 +4,7 @@
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
+#include <lvgl.h>
 #include <string.h>
 
 // ===== 屏幕（先按 02_screen_demo 的引脚/分辨率移植；如与你硬件不一致需改这里）=====
@@ -15,9 +16,17 @@
 #define TFT_BL 10
 
 #define SCREEN_WIDTH 240
-#define SCREEN_HEIGHT 296
+#define SCREEN_HEIGHT 280
 
 static Adafruit_ST7789 tft(TFT_CS, TFT_DC, TFT_RST);
+
+// LVGL 显示缓冲区
+static lv_disp_draw_buf_t draw_buf;
+static lv_disp_drv_t disp_drv;
+static lv_obj_t *label_ip;
+static lv_obj_t *label_cpu;
+static lv_obj_t *label_temp;
+static lv_obj_t *label_net;
 
 // 上位机每秒发送一行 JSON（NDJSON），这里保存解析后的字段（按需增减）
 struct NasStats {
@@ -122,12 +131,47 @@ static void displayInit() {
   tft.setRotation(2);
   tft.invertDisplay(false);
   tft.fillScreen(ST77XX_BLACK);
+}
 
-  tft.setTextWrap(false);
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setTextSize(2);
-  tft.setCursor(0, 0);
-  tft.println("Display OK");
+// LVGL 刷屏回调
+static void lvgl_flush_cb(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
+  uint32_t w = lv_area_get_width(area);
+  uint32_t h = lv_area_get_height(area);
+  tft.startWrite();
+  tft.setAddrWindow(area->x1, area->y1, w, h);
+  tft.writePixels((uint16_t *)color_p, w * h);
+  tft.endWrite();
+  lv_disp_flush_ready(disp);
+}
+
+static void lvgl_init() {
+  lv_init();
+
+  static lv_color_t buf1[SCREEN_WIDTH * 40];
+  lv_disp_draw_buf_init(&draw_buf, buf1, NULL, SCREEN_WIDTH * 40);
+
+  lv_disp_drv_init(&disp_drv);
+  disp_drv.hor_res = SCREEN_WIDTH;
+  disp_drv.ver_res = SCREEN_HEIGHT;
+  disp_drv.flush_cb = lvgl_flush_cb;
+  disp_drv.draw_buf = &draw_buf;
+  lv_disp_drv_register(&disp_drv);
+
+  label_ip = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(label_ip, 20, 20);
+  lv_label_set_text(label_ip, "IP: --");
+
+  label_cpu = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(label_cpu, 20, 50);
+  lv_label_set_text(label_cpu, "CPU: --%");
+
+  label_temp = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(label_temp, 20, 80);
+  lv_label_set_text(label_temp, "Ti: --C");
+
+  label_net = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(label_net, 20, 110);
+  lv_label_set_text(label_net, "NET: --/--");
 }
 
 static void displaySelfTest() {
@@ -141,21 +185,32 @@ static void displaySelfTest() {
 }
 
 static void displayShowStats(const NasStats &s) {
-  tft.fillRect(0, 0, SCREEN_WIDTH, 96, ST77XX_BLACK);
-  tft.setCursor(0, 0);
-  tft.printf("IP:%s\n", s.ip);
-  tft.printf("CPU:%.1f%%\n", s.cpu_usage);
-  tft.printf("T:%.1fC\n", s.cpu_temp_c);
-  tft.printf("NET:%.1f/%.1f\n", s.net_rx_kbs, s.net_tx_kbs);
+  static char buf[64];
+
+  snprintf(buf, sizeof(buf), "IP: %s", s.ip);
+  lv_label_set_text(label_ip, buf);
+
+  snprintf(buf, sizeof(buf), "CPU: %.1f%%", s.cpu_usage);
+  lv_label_set_text(label_cpu, buf);
+
+  snprintf(buf, sizeof(buf), "T: %.1fC", s.cpu_temp_c);
+  lv_label_set_text(label_temp, buf);
+
+  snprintf(buf, sizeof(buf), "NET: %.1f/%.1f", s.net_rx_kbs, s.net_tx_kbs);
+  lv_label_set_text(label_net, buf);
 }
 
 void setup() { //                                                              上电/复位后执行一次
   initUsbSerial(115200, true); //                                               初始化串口并等待主机连接
   displayInit();
   displaySelfTest();
+  lvgl_init();
 }
 
 void loop() { //                                                               主循环
+  lv_timer_handler(); //                                                        LVGL 任务处理
+  lv_tick_inc(5); //                                                            更新 LVGL 时钟
+
   static char msg[768]; //                                                      接收缓冲区（存放一行）
   size_t msgLen = 0; //                                                         本次实际接收长度
   // 若收到一行，则回显给主机
