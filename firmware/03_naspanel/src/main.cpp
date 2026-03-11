@@ -6,6 +6,7 @@
 #include <Adafruit_ST7789.h>
 #include <lvgl.h>
 #include <string.h>
+#include "ui.h"
 
 // ===== 屏幕（先按 02_screen_demo 的引脚/分辨率移植；如与你硬件不一致需改这里）=====
 #define TFT_CS 9
@@ -23,28 +24,6 @@ static Adafruit_ST7789 tft(TFT_CS, TFT_DC, TFT_RST);
 // LVGL 显示缓冲区
 static lv_disp_draw_buf_t draw_buf;
 static lv_disp_drv_t disp_drv;
-static lv_obj_t *label_ip;
-static lv_obj_t *label_cpu;
-static lv_obj_t *label_temp;
-static lv_obj_t *label_net;
-
-// 上位机每秒发送一行 JSON（NDJSON），这里保存解析后的字段（按需增减）
-struct NasStats {
-  char ts[20]; //                                                              "2026-03-01T22:09:39" (19) + '\0'
-  char ip[16]; //                                                              IPv4 最大 15 + '\0'
-
-  float cpu_usage;
-  float cpu_temp_c;
-  int mem_used_mb;
-  int mem_total_mb;
-  float load1;
-  float load5;
-  float load15;
-  long uptime_s;
-  long cpu_freq_mhz;
-  float net_rx_kbs;
-  float net_tx_kbs;
-};
 
 // 初始化 USB CDC 串口
 static void initUsbSerial(uint32_t baud = 115200, bool waitForHost = true) {
@@ -157,21 +136,7 @@ static void lvgl_init() {
   disp_drv.draw_buf = &draw_buf;
   lv_disp_drv_register(&disp_drv);
 
-  label_ip = lv_label_create(lv_scr_act());
-  lv_obj_set_pos(label_ip, 20, 20);
-  lv_label_set_text(label_ip, "IP: --");
-
-  label_cpu = lv_label_create(lv_scr_act());
-  lv_obj_set_pos(label_cpu, 20, 50);
-  lv_label_set_text(label_cpu, "CPU: --%");
-
-  label_temp = lv_label_create(lv_scr_act());
-  lv_obj_set_pos(label_temp, 20, 80);
-  lv_label_set_text(label_temp, "Ti: --C");
-
-  label_net = lv_label_create(lv_scr_act());
-  lv_obj_set_pos(label_net, 20, 110);
-  lv_label_set_text(label_net, "NET: --/--");
+  ui_init();
 }
 
 static void displaySelfTest() {
@@ -184,21 +149,6 @@ static void displaySelfTest() {
   tft.fillScreen(ST77XX_BLACK);
 }
 
-static void displayShowStats(const NasStats &s) {
-  static char buf[64];
-
-  snprintf(buf, sizeof(buf), "IP: %s", s.ip);
-  lv_label_set_text(label_ip, buf);
-
-  snprintf(buf, sizeof(buf), "CPU: %.1f%%", s.cpu_usage);
-  lv_label_set_text(label_cpu, buf);
-
-  snprintf(buf, sizeof(buf), "T: %.1fC", s.cpu_temp_c);
-  lv_label_set_text(label_temp, buf);
-
-  snprintf(buf, sizeof(buf), "NET: %.1f/%.1f", s.net_rx_kbs, s.net_tx_kbs);
-  lv_label_set_text(label_net, buf);
-}
 
 void setup() { //                                                              上电/复位后执行一次
   initUsbSerial(115200, true); //                                               初始化串口并等待主机连接
@@ -224,7 +174,7 @@ void loop() { //                                                               �
                     s.ts, s.ip, s.cpu_usage, s.cpu_temp_c,
                     s.mem_used_mb, s.mem_total_mb,
                     s.net_rx_kbs, s.net_tx_kbs);
-      displayShowStats(s);
+      ui_update(s);
     } else {
       Serial.println("ERR: json");
     }
