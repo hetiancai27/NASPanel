@@ -16,10 +16,14 @@ void ui_init() {
   lv_obj_set_size(panel, 230, 270);  // 设置尺寸：宽 220px，高 260px
   lv_obj_set_pos(panel, 5, 5);     // 设置位置：距左边 10px，距顶部 10px
   lv_obj_set_style_radius(panel, 30, 0);  // 设置圆角半径：10px
-  lv_obj_set_style_bg_color(panel, lv_color_make(111, 143, 143), 0); // 深天蓝背景/
-  lv_label_set_text(panel, "IP: --");
-  
+  lv_obj_set_style_bg_color(panel, lv_color_make(111, 143, 143), 0);
 
+  // 底部白色标签
+  lv_obj_t *ip_label = lv_label_create(panel);
+  lv_obj_set_pos(ip_label, 10, 240);
+  lv_label_set_text(ip_label, "IP: --");
+  lv_obj_set_style_text_color(ip_label, lv_color_white(), 0);
+   lv_obj_set_style_text_font(ip_label, &lv_font_montserrat_20, 0);
 
   // 在图层上创建标签（父对象改为 panel）
   label_ip = lv_label_create(panel);
